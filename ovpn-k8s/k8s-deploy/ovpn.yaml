@@ -1,0 +1,65 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ovpn0
+  namespace: ovpn
+spec:
+  selector:
+    matchLabels:
+      app: ovpn0
+  replicas: 1
+  template:
+    metadata:
+      labels:
+        app: ovpn0
+    spec:
+      terminationGracePeriodSeconds: 30
+      containers:
+        - name: ovpn0
+          image: myrepo/ovpn:latest
+          imagePullPolicy: Always
+          ports:
+            - name: openvpn
+              containerPort: 1194
+              protocol: UDP    
+          resources:
+            requests:
+              memory: 128Mi
+              cpu: 1m
+            limits:
+              memory: 256Mi
+              cpu: 2m
+          securityContext:
+             capabilities:
+                add:
+                 - NET_ADMIN                                         
+          volumeMounts:
+          - mountPath: /etc/openvpn/ccd
+            name: ovpn0-data
+            readOnly: false     
+      imagePullSecrets:
+      - name: docker-registry-secret
+      restartPolicy: Always
+      volumes:
+      - name: ovpn0-data
+        persistentVolumeClaim:
+          claimName: ovpn0-pvc 
+          readOnly: false      
+  strategy:
+    type: Recreate    
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: ovpn0-svc
+  namespace: ovpn
+spec:
+  selector:
+    app: ovpn0
+  type: NodePort  
+  ports:
+    - port: 1194
+      targetPort: 1194
+      nodePort: 31304
+      protocol: UDP
+      name: openvpn

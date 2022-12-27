@@ -1,0 +1,7 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: ovpn
+  labels:
+    app.kubernetes.io/name: ovpn
+    app.kubernetes.io/instance: ovpn

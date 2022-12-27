@@ -1,0 +1,120 @@
+# Configurações container
+Porta / firewall: 31304 / UDP
+Configurar Registro A, DNS apontando para o IP de um dos nodes do cluster
+
+####################################
+
+# Arquivo Dockerfile:
+FROM kylemanna/openvpn
+ENV TZ America/Sao_Paulo
+COPY ./config /etc/openvpn
+
+####################################
+
+# Criar diretório de trabalho:
+mkdir config
+
+# Configurar VPN - Verificar DNS, EXEMPLO: vpn.domain.com
+docker run -v /home/user/ovpn-k8s/config:/etc/openvpn:z --rm kylemanna/openvpn ovpn_genconfig -u udp://vpn.domain.com
+
+# Iniciar a configuração das chaves internas
+docker run -v /home/user/ovpn-k8s/config:/etc/openvpn:z --rm -it kylemanna/openvpn ovpn_initpki
+
+# Escrever no arquivo: openvpn.conf
+echo "crl-verify /etc/openvpn/pki/crl.pem" >> /etc/openvpn/openvpn.conf
+
+# Rodar a VPN
+docker run -v /home/user/ovpn-k8s/config:/etc/openvpn:z -d -p 1194:1194/udp --cap-add=NET_ADMIN kylemanna/openvpn
+
+# Cadastrar usuario
+docker run -v /home/user/ovpn-k8s/config:/etc/openvpn:z --rm -it kylemanna/openvpn easyrsa build-client-full you_user nopass
+
+# Gerar o arquivo de chave pra fora
+docker run -v /home/user/ovpn-k8s/config:/etc/openvpn:z --rm kylemanna/openvpn ovpn_getclient you_user > you_user.ovpn
+
+##################################
+
+# Finalizar imagem anterior
+docker ps
+docker stop container_name
+docker rm container_name
+
+# Permissão ROOT
+sudo su
+
+# Build da imagem
+docker build  -f Dockerfile -t you_repo/ovpn:latest .
+
+# Retornar usuário
+exit
+
+# Push da imagem pro registry
+docker push you_repo/ovpn:latest
+
+# Rodar a VPN
+docker run -d -p 1194:1194/udp --cap-add=NET_ADMIN you_repo/ovpn:latest
+
+##################################
+
+# Executar ovpn.yaml 
+# Obs: É possivel haver várias VPNs no mesmo cluster, vpn0, 1 etc
+
+##################################
+
+# Configuração básica do cabeçalho cliente.ovpn
+
+client
+nobind
+dev tun0
+remote-cert-tls server
+
+remote vpn.domain.com 31304 udp
+
+script-security 2
+up /etc/openvpn/scripts/update-systemd-resolved
+down /etc/openvpn/scripts/update-systemd-resolved
+down-pre
+
+#####################################
+
+# Exemplo configuração ccd
+
+push-reset
+push "redirect-gateway def1 bypass-dhcp"
+push "route 10.0.0.0 255.0.0.0"
+push "route 10.8.0.0 255.255.255.0"
+push "route 124.254.153.254 255.255.255.255"
+push "dhcp-option DNS 124.254.153.254"
+ifconfig-push 10.8.0.18 10.8.0.17
+
+#####################################
+
+Cópia de arquivos ccd dos usuarios:
+
+kubectl cp /home/user/ovpn-k8s/ccd/you_user ovpn0-xxpod-xxxx:/etc/openvpn/ccd
+
+#####################################
+
+# Teste de conexão 
+
+sudo openvpn --client --config /local/client.ovpn
+
+#####################################
+
+# Arquivos de log VPN
+/tmp/openvpn-status.log
+
+# Arquivos de configuração
+/etc/openvpn
+
+#####################################
+
+revogar usuarios:
+
+easyrsa revoke usuario
+easyrsa gen-crl
+
+Confirme (yes) 
+passwd: you_passwd
+
+#######################################
